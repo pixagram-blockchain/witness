@@ -1,0 +1,9 @@
+# Datadir contents (blockchain state, logs)
+pixagram/blockchain/
+pixagram/p2p/
+pixagram/logs/
+pixagram/*.log
+
+# Keep the config tracked but ignore secrets-bearing variants
+pixagram/config.ini.local
+.env

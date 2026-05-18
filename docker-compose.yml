@@ -1,0 +1,41 @@
+services:
+  init_permissions:
+    image: alpine:3.20
+    container_name: witness_init_permissions
+    user: "0:0"
+    volumes:
+      - ./pixagram:/home/hived/datadir
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        chown -R 1000:1000 /home/hived/datadir
+    restart: "no"
+
+  pixagram:
+    image: pixadock/pixagram:pre-mainnet
+    container_name: witness_pixagram_container
+
+    depends_on:
+      init_permissions:
+        condition: service_completed_successfully
+
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - ulimit -n 1048576; exec /home/hived_admin/docker_entrypoint.sh /home/hived/bin/hived
+
+    ports:
+      - "2001:2001"  # P2P (direct to internet)
+
+    volumes:
+      - ./pixagram:/home/hived/datadir
+
+    environment:
+      - DATADIR=/home/hived/datadir
+      - SHM_DIR=/home/hived/datadir/blockchain
+      - HIVED_UID=1000
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    restart: unless-stopped
