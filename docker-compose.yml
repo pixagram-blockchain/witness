@@ -81,7 +81,7 @@ services:
     command:
       - --witness=${WITNESS_ACCOUNT}
       - --rpc=http://pixagram:7777
-      - --token-price=0.06
+      - --token-price=0.12
       - --interval=1h
     environment:
       - WITNESS_WIF=${WITNESS_WIF}
