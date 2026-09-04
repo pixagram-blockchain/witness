@@ -1,3 +1,6 @@
+# Pixagram witness node - consensus only, no HAF / Hivemind / public API.
+# See README.md for sizing, firewall rules and verification.
+
 services:
   init_permissions:
     image: alpine:3.20
@@ -6,13 +9,13 @@ services:
     volumes:
       - ./pixagram:/home/hived/datadir
     entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        chown -R 1000:1000 /home/hived/datadir
+    command: chown -R 1000:1000 /home/hived/datadir
     restart: "no"
+    networks:
+      - backend
 
   pixagram:
-    image: pixadock/pixagram:v1.0.0
+    image: pixadock/pixagram:mainnet
     container_name: witness_pixagram_container
 
     depends_on:
@@ -22,10 +25,16 @@ services:
     entrypoint:
       - /bin/bash
       - -lc
-      - ulimit -n 1048576; exec /home/hived_admin/docker_entrypoint.sh /home/hived/bin/hived
+      # HIVED_EXTRA_ARGS lets you pass one-off flags without editing this file,
+      # e.g. HIVED_EXTRA_ARGS=--replay-blockchain docker compose up -d pixagram
+      - ulimit -n 1048576; exec /home/hived/docker_entrypoint.sh /home/hived/bin/hived ${HIVED_EXTRA_ARGS:-}
 
     ports:
-      - "2001:2001"  # P2P (direct to internet)
+      # P2P - MUST be open to the internet, or you cannot sync or see blocks.
+      - "2001:2001"
+      # Local admin API, loopback only on purpose. A witness that serves a
+      # public API can be loaded by strangers until it starts missing blocks.
+      - "127.0.0.1:7777:7777"
 
     volumes:
       - ./pixagram:/home/hived/datadir
@@ -33,9 +42,51 @@ services:
     environment:
       - DATADIR=/home/hived/datadir
       - SHM_DIR=/home/hived/datadir/blockchain
+      - HTTP_PORT=7777
       - HIVED_UID=1000
+
     ulimits:
       nofile:
         soft: 1048576
         hard: 1048576
+
+    # unless-stopped, never "no": with restart:"no" a reboot brings the box
+    # back with everything looking healthy and no block producer running, and
+    # you only find out from your missed-block count.
     restart: unless-stopped
+
+    networks:
+      - backend
+
+  # Witness price feed (1 PXS = 1 Big Mac). Witnesses are expected to publish
+  # a feed; a stale one counts against you.
+  #
+  # NOTE the key here is different from the one in pixagram/config.ini:
+  #   config.ini  -> your witness SIGNING key (signs blocks)
+  #   WITNESS_WIF -> your account's ACTIVE key (signs the feed_publish op)
+  # Put the active key in a .env file next to this one:
+  #   WITNESS_ACCOUNT=your-account
+  #   WITNESS_WIF=your-active-key
+  # then chmod 600 .env. It is already in .gitignore.
+  #
+  # Remove this service if you publish your feed by other means.
+  bigmac-feed:
+    image: pixadock/bigmac-feed:latest
+    container_name: witness_bigmac_feed
+    depends_on:
+      pixagram:
+        condition: service_started
+    command:
+      - --witness=${WITNESS_ACCOUNT}
+      - --rpc=http://pixagram:7777
+      - --token-price=0.06
+      - --interval=1h
+    environment:
+      - WITNESS_WIF=${WITNESS_WIF}
+    restart: unless-stopped
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
