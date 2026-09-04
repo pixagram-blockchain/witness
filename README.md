@@ -1,9 +1,14 @@
 # Pixagram witness
 
 Minimal docker-compose stack for a Pixagram witness node. It joins the network
-over P2P at `api.pixagram.com:2001`, validates blocks, produces blocks in your
-scheduled slot, and publishes a price feed. No HAF, no PostgreSQL, no Hivemind,
-no public API.
+over P2P at `api.pixagram.com:2001`, validates blocks and produces blocks in
+your scheduled slot. Nothing else: no HAF, no PostgreSQL, no Hivemind, and no
+usable API.
+
+Only the `witness` plugin is loaded. hived still starts a webserver, because it
+comes in as a transitive dependency, but no API plugins are registered so every
+method returns `Could not find API <name>`. Query the chain against
+`https://api.pixagram.com` instead.
 
 If you want the social API (`bridge.*`, follow, tags), you want an API node
 instead — that is a different, much heavier stack.
@@ -24,21 +29,6 @@ private-key = 5xxxxxxxxxxxxxxxxxxxxxx...    # ← your witness SIGNING key (WIF)
 |---|---|
 | `witness` | Your witness account name, as registered on chain with `witness_update_operation`. It must be set on-chain **before** this node can be scheduled. |
 | `private-key` | The signing key (WIF, starts with `5`) matching the `block_signing_key` on your witness object. **Not** your owner key and **not** your active key. |
-
-**2. `.env`** — for the price feed:
-
-```bash
-cat > .env <<'EOF'
-WITNESS_ACCOUNT=your-account
-WITNESS_WIF=your-ACTIVE-key
-EOF
-chmod 600 .env
-```
-
-Note the two keys are different. `config.ini` takes your **signing** key, which
-signs blocks. `.env` takes your account's **active** key, which signs the
-`feed_publish` transaction. Do not put the same key in both unless they really
-are the same key.
 
 **Treat `config.ini` as secret.** That WIF lets anyone produce blocks as your
 witness — or miss them, which gets your witness disabled. `.gitignore` covers
@@ -102,10 +92,9 @@ Fix it and restart.
 | Port | Exposure | Required |
 |---|---|---|
 | `2001/tcp` | **open to `0.0.0.0/0`** | **yes** — no P2P, no sync, no blocks |
-| `7777/tcp` | loopback only | no, and do not expose it |
 
-The compose file publishes 7777 on `127.0.0.1` only. A witness serving a public
-API can be loaded by strangers until it starts missing blocks. Leave it closed.
+That is the only published port. hived's webserver listens inside the container
+but is not exposed, and would answer nothing useful anyway.
 
 ---
 
@@ -126,19 +115,19 @@ split. Leave both unset, as they are in the shipped config.
 
 ## Verify it is actually working
 
-```bash
-# synced and in live mode?
-curl -s -X POST http://127.0.0.1:7777 -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"condenser_api.get_dynamic_global_properties","params":[],"id":1}'
+This node exposes no API, so check it from the outside and from its logs.
 
-# your witness object - check signing key and missed count
-curl -s -X POST http://127.0.0.1:7777 -H 'Content-Type: application/json' \
+```bash
+# your witness object - signing key and, more importantly, missed count
+curl -s -X POST https://api.pixagram.com -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"condenser_api.get_witness_by_account","params":["your-account"],"id":1}'
+
+# is your node keeping up?
+docker compose logs --tail=50 pixagram | grep -E "Generated block|Syncing|entering live mode"
 ```
 
-`total_missed` is the number that matters. Compare `head_block_number` against
-`https://api.pixagram.com`; if you lag by more than a couple of blocks, you have
-a problem.
+`total_missed` is the number that matters. If it climbs, your node is not
+producing when scheduled.
 
 ---
 
@@ -146,7 +135,7 @@ a problem.
 
 | Path | Purpose |
 |---|---|
-| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:mainnet`) plus the price feed |
+| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:mainnet`) |
 | `pixagram/config.ini` | hived config — consensus plugins only |
 | `pixagram/` | mounted as the datadir; holds `blockchain/`, `p2p/` after first run |
 
@@ -167,7 +156,7 @@ sudo rm -rf pixagram/blockchain pixagram/p2p pixagram/logs pixagram/*.log
 docker compose up -d
 ```
 
-`config.ini` and `.env` are preserved.
+`config.ini` is preserved.
 
 `block_log*` is the chain itself — never delete it on a node you intend to keep.
 Everything else under `blockchain/` is derived state and is rebuilt by a replay:
@@ -179,3 +168,13 @@ HIVED_EXTRA_ARGS=--replay-blockchain docker compose up -d pixagram
 # once it logs "entering live mode":
 docker compose up -d
 ```
+
+## Price feed
+
+Witnesses are expected to publish a price feed, and a stale one counts against
+you. This repo does not ship a feed publisher, because a node running only the
+`witness` plugin has no `network_broadcast_api` to broadcast through.
+
+Publish it from somewhere that does have an API — sign locally with your
+account's **active** key (not the signing key in `config.ini`) and broadcast via
+`https://api.pixagram.com` or your own API node.
