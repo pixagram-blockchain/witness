@@ -73,7 +73,7 @@ services:
   #   WITNESS_WIF=your-active-key
   # then chmod 600 .env
   bigmac-feed:
-    image: pixadock/bigmac-feed:latest
+    image: pixadock/bigmac-feed:v1.0.2
     container_name: witness_bigmac_feed
     depends_on:
       pixagram:
