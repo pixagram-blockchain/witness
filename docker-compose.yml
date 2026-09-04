@@ -8,8 +8,9 @@ services:
     user: "0:0"
     volumes:
       - ./pixagram:/home/hived/datadir
-    entrypoint: ["/bin/sh", "-c"]
-    command: chown -R 1000:1000 /home/hived/datadir
+    # No shell: compose would word-split a plain `command` string and `sh -c`
+    # would then take only the first word as the script.
+    entrypoint: ["chown", "-R", "1000:1000", "/home/hived/datadir"]
     restart: "no"
     networks:
       - backend
@@ -39,6 +40,7 @@ services:
     environment:
       - DATADIR=/home/hived/datadir
       - SHM_DIR=/home/hived/datadir/blockchain
+      - HTTP_PORT=7777
       - HIVED_UID=1000
 
     ulimits:
@@ -51,6 +53,39 @@ services:
     # you only find out from your missed-block count.
     restart: unless-stopped
 
+    networks:
+      - backend
+
+  # Witness price feed (1 PXS = 1 Big Mac). Witnesses are expected to publish a
+  # feed, and a stale one counts against you.
+  #
+  # It broadcasts through THIS node over the compose network, not through a
+  # public API - which is why hived loads database_api and
+  # network_broadcast_api. Nothing leaves the machine except the finished,
+  # signed transaction over P2P.
+  #
+  # The key here is NOT the one in pixagram/config.ini:
+  #   config.ini  -> witness SIGNING key, signs blocks
+  #   WITNESS_WIF -> account ACTIVE key, signs the feed_publish operation
+  #
+  # Create .env next to this file (already covered by .gitignore):
+  #   WITNESS_ACCOUNT=your-account
+  #   WITNESS_WIF=your-active-key
+  # then chmod 600 .env
+  bigmac-feed:
+    image: pixadock/bigmac-feed:latest
+    container_name: witness_bigmac_feed
+    depends_on:
+      pixagram:
+        condition: service_started
+    command:
+      - --witness=${WITNESS_ACCOUNT}
+      - --rpc=http://pixagram:7777
+      - --token-price=0.06
+      - --interval=1h
+    environment:
+      - WITNESS_WIF=${WITNESS_WIF}
+    restart: unless-stopped
     networks:
       - backend
 
