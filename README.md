@@ -57,6 +57,28 @@ witness — or miss them, which gets your witness disabled. `.gitignore` covers
 `.env` and the datadir but **not** `config.ini`, because the file is tracked as
 a template. Once you fill in your key, `chmod 600` it and never commit it.
 
+**Then protect it from `git pull`.** Because the file is tracked, a later
+`git pull` — or any `git reset --hard` — replaces your filled-in copy with the
+placeholder version. This failure is quiet and delayed: hived reads `config.ini`
+once at startup and never again, so the running node keeps producing normally
+and nothing looks wrong. It stops producing the next time the container
+restarts, which may be days later. Tell git to leave your copy alone:
+
+```bash
+chmod 600 pixagram/config.ini
+git update-index --skip-worktree pixagram/config.ini
+```
+
+`git ls-files -v pixagram/config.ini` should then print a leading `S`. To pick
+up a genuine upstream change to the template later:
+
+```bash
+git update-index --no-skip-worktree pixagram/config.ini
+cp pixagram/config.ini pixagram/config.ini.mine    # your identity, kept aside
+git stash && git pull && git stash pop             # resolve any conflict
+git update-index --skip-worktree pixagram/config.ini
+```
+
 ---
 
 ## Sizing
@@ -149,6 +171,9 @@ curl -s -X POST https://api.pixagram.com -H 'Content-Type: application/json' \
 
 # is your node keeping up?
 docker compose logs --tail=50 pixagram | grep -E "Generated block|Syncing|entering live mode"
+
+# would it still produce after a restart? both lines must be present and uncommented
+grep -E '^(witness|private-key) =' pixagram/config.ini
 ```
 
 `total_missed` is the number that matters. If it climbs, your node is not
