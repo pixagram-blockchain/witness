@@ -81,6 +81,82 @@ git update-index --skip-worktree pixagram/config.ini
 
 ---
 
+## ⚠️ Required: a synchronised clock
+
+Your machine must run an NTP daemon. This is not a nicety: a witness with a
+drifting clock silently costs **other** witnesses their blocks.
+
+Block slots are 3 seconds, and hived decides when to produce from the local
+system clock. If your clock is a second or two slow, your block goes out that
+late in real time and reaches your peers at the boundary of the *next* witness's
+slot. That witness has not seen your block, so it builds on the previous head,
+produces a competing block at the same height, and loses the fork race. It is
+recorded as a missed block **for them**.
+
+That is the part worth understanding: **the penalty lands on the next witness in
+the schedule, not on you.** Your own `total_missed` stays clean while you cost
+the network blocks, so you will never notice it from your own numbers.
+
+This is not hypothetical. One Pixagram witness ran 2.672 s slow and was
+responsible for 121 of the 123 same-height block collisions on the network; a
+single witness on the far side of the world absorbed 109 missed blocks because
+of it. Installing an NTP daemon brought the offset to 3 ms and the misses
+stopped immediately — the next 3.5 hours produced 4163 blocks from 4163 slots,
+with not one empty.
+
+**Check what you have:**
+
+```bash
+timedatectl | grep -E 'synchronized|NTP service'
+```
+
+You want `System clock synchronized: yes` and an active NTP service. Ubuntu
+ships `systemd-timesyncd` enabled and most cloud images do the right thing, but
+**Debian cloud images frequently ship with no time daemon at all** — which is
+exactly how the incident above happened.
+
+**If it is missing:**
+
+```bash
+sudo apt-get update && sudo apt-get install -y chrony
+sudo systemctl enable --now chrony
+```
+
+Make sure it is `enabled`, not merely started, or it will not survive a reboot.
+
+**Verify the real offset.** Do not trust `timedatectl` alone, and do not compare
+`date` over SSH from your laptop — connection latency swamps the number you are
+trying to measure. Ask an NTP server from the machine itself:
+
+```bash
+python3 - <<'PY'
+import socket, struct, time, statistics
+def probe(host):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(4)
+    try:
+        t1 = time.time(); s.sendto(b'\x1b' + 47 * b'\0', (host, 123))
+        d, _ = s.recvfrom(1024); t4 = time.time()
+    finally:
+        s.close()
+    u = struct.unpack('!12I', d[:48])
+    t2 = u[8] + u[9] / 2**32 - 2208988800
+    t3 = u[10] + u[11] / 2**32 - 2208988800
+    return ((t2 - t1) + (t3 - t4)) / 2
+offsets = []
+for host in ('pool.ntp.org', 'time.google.com', 'time.cloudflare.com'):
+    for _ in range(3):
+        try: offsets.append(probe(host))
+        except Exception: pass
+print(f'clock offset: {statistics.median(offsets):+.4f}s  ({len(offsets)} samples)'
+      if offsets else 'could not reach any NTP server')
+PY
+```
+
+Under ~50 ms is fine. Past roughly half a second you are costing your neighbours
+in the schedule real blocks.
+
+---
+
 ## Sizing
 
 Measured on a production Pixagram node, except where marked.
