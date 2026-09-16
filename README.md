@@ -261,7 +261,7 @@ producing when scheduled.
 
 | Path | Purpose |
 |---|---|
-| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:mainnet`) |
+| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:1.29.0`) |
 | `pixagram/config.ini` | hived config — witness plus the two APIs the feed needs |
 | `.env` | `WITNESS_ACCOUNT` and `WITNESS_WIF` for the feed (git-ignored) |
 | `pixagram/` | mounted as the datadir; holds `blockchain/`, `p2p/` after first run |
@@ -295,6 +295,30 @@ HIVED_EXTRA_ARGS=--replay-blockchain docker compose up -d pixagram
 # once it logs "entering live mode":
 docker compose up -d
 ```
+
+## Upgrading to 1.29.0 (hardfork 29)
+
+Hardfork 29 activates on **2026-09-18 12:00:00 UTC**. Every witness has to run 1.29.0
+before then: after activation the network rejects blocks signed by older versions, so a
+witness left on 1.28.7 simply goes dark.
+
+hived stamps its build configuration into `shared_memory.bin` and refuses a state file
+written by another version ("Blockchain config from shared memory file mismatch current
+version of app"), so a plain `restart` is not enough. The upgrade is a pull plus one replay
+of the local `block_log`:
+
+```bash
+git pull                                   # picks up the 1.29.0 tag in docker-compose.yml
+docker compose pull pixagram
+docker compose stop pixagram
+HIVED_EXTRA_ARGS="--force-replay --exit-before-sync" docker compose run --rm --no-deps pixagram
+docker compose up -d pixagram
+```
+
+The one-off container rebuilds the state from `block_log` (about 20 seconds for the
+current chain) and exits; the last line starts the witness normally. It is offline for
+roughly a minute - at most one missed slot. `config.ini`, `.env` and `block_log` are
+untouched.
 
 ## Price feed
 
