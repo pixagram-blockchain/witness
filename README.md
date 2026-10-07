@@ -261,7 +261,7 @@ producing when scheduled.
 
 | Path | Purpose |
 |---|---|
-| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:1.29.0`) |
+| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:1.30.0`) |
 | `pixagram/config.ini` | hived config — witness plus the two APIs the feed needs |
 | `.env` | `WITNESS_ACCOUNT` and `WITNESS_WIF` for the feed (git-ignored) |
 | `pixagram/` | mounted as the datadir; holds `blockchain/`, `p2p/` after first run |
@@ -296,9 +296,28 @@ HIVED_EXTRA_ARGS=--replay-blockchain docker compose up -d pixagram
 docker compose up -d
 ```
 
+## Upgrading to 1.30.0 (hardfork 30)
+
+Hardfork 30 activated on **2026-10-07 12:00:00 UTC** at block 949330. A witness still on
+1.29.0 keeps applying the old rules after that block and drifts from the network, so it has
+to move to 1.30.0. The upgrade is the same pull and one-off replay as for 1.29.0:
+
+```bash
+git pull                                   # picks up the 1.30.0 tag in docker-compose.yml
+docker compose pull pixagram
+docker compose stop pixagram
+HIVED_EXTRA_ARGS="--force-replay --exit-before-sync" docker compose run --rm --no-deps pixagram
+docker compose up -d pixagram
+```
+
+Two HF30 rules matter when you register a new witness. It is scheduled only once it holds
+approval from at least 1% of all outstanding VESTS, so registering alone is not enough to
+produce blocks. And registration with the null signing key is rejected; register with the
+public half of the key in `config.ini`.
+
 ## Upgrading to 1.29.0 (hardfork 29)
 
-Hardfork 29 activates on **2026-09-18 12:00:00 UTC**. Every witness has to run 1.29.0
+Hardfork 29 activated on **2026-09-18 12:00:00 UTC** at block 402205. Every witness had to run 1.29.0
 before then: after activation the network rejects blocks signed by older versions, so a
 witness left on 1.28.7 simply goes dark.
 

@@ -16,7 +16,7 @@ services:
       - backend
 
   pixagram:
-    image: pixadock/pixagram:1.29.0
+    image: pixadock/pixagram:1.30.0
     container_name: witness_pixagram_container
 
     depends_on:
