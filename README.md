@@ -261,7 +261,7 @@ producing when scheduled.
 
 | Path | Purpose |
 |---|---|
-| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:1.30.0`) |
+| `docker-compose.yml` | `pixagram` (hived, `pixadock/pixagram:1.30.1`) |
 | `pixagram/config.ini` | hived config — witness plus the two APIs the feed needs |
 | `.env` | `WITNESS_ACCOUNT` and `WITNESS_WIF` for the feed (git-ignored) |
 | `pixagram/` | mounted as the datadir; holds `blockchain/`, `p2p/` after first run |
@@ -294,6 +294,19 @@ rm -f pixagram/blockchain/shared_memory.bin
 HIVED_EXTRA_ARGS=--replay-blockchain docker compose up -d pixagram
 # once it logs "entering live mode":
 docker compose up -d
+```
+
+## Upgrading to 1.30.1
+
+1.30.1 is a maintenance release without a hardfork, so 1.30.0 and 1.30.1 nodes run side by side.
+The upgrade is the usual pull and one-off replay:
+
+```bash
+git pull                                   # picks up the 1.30.1 tag in docker-compose.yml
+docker compose pull pixagram
+docker compose stop pixagram
+HIVED_EXTRA_ARGS="--force-replay --exit-before-sync" docker compose run --rm --no-deps pixagram
+docker compose up -d pixagram
 ```
 
 ## Upgrading to 1.30.0 (hardfork 30)
